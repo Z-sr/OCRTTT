@@ -148,8 +148,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         et_url = findViewById(R.id.et_url);
         tv_ = findViewById(R.id.tv_);
         img_.setOnClickListener(this);
+        btn_1.setOnClickListener(this);
         btn_2.setOnClickListener(this);
-        btn_3.setOnClickListener(this);
         btn_3.setOnClickListener(this);
         int checkSelfPermission = ActivityCompat.checkSelfPermission(this, "android.permission.WRITE_EXTERNAL_STORAGE");
         if (checkSelfPermission != PackageManager.PERMISSION_GRANTED) {
