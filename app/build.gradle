@@ -38,5 +38,6 @@ dependencies {
 //    implementation 'com.github.yalantis:ucrop:2.2.3'
 //    implementation 'com.github.yalantis:ucrop:2.2.3-native'
     implementation 'com.isseiaoki:simplecropview:1.1.8'
+    implementation 'com.github.bumptech.glide:glide:4.9.0'
 
 }

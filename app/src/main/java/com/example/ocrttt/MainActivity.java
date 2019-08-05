@@ -1,5 +1,6 @@
 package com.example.ocrttt;
 
+import android.app.Activity;
 import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
@@ -30,11 +31,14 @@ import android.os.Bundle;
 import android.support.v7.widget.LinearLayoutManager;
 import android.support.v7.widget.RecyclerView;
 import android.text.TextUtils;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -63,6 +67,8 @@ import com.amazonaws.services.s3.model.CannedAccessControlList;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.PutObjectResult;
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.request.RequestOptions;
 //import com.yanzhenjie.durban.Controller;
 //import com.yanzhenjie.durban.Durban;
 
@@ -74,6 +80,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.URL;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -92,6 +100,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private ImageView img_;
     private View btn_1;
     private View btn_2;
+    private View btn_3;
+    private EditText et_url;
     private static String[] PERMISSIONS_STORAGE = {
             "android.permission.READ_EXTERNAL_STORAGE",
             "android.permission.WRITE_EXTERNAL_STORAGE"};
@@ -123,6 +133,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private long mRekognitionEndTime;
     private long mCheckDataStartTime;
     private long mCheckDataEndTime;
+    private Bitmap mCropBitmap;
 
 
     @Override
@@ -133,9 +144,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         rv_ = findViewById(R.id.rv_);
         btn_1 = findViewById(R.id.btn_1);
         btn_2 = findViewById(R.id.btn_2);
+        btn_3 = findViewById(R.id.btn_3);
+        et_url = findViewById(R.id.et_url);
         tv_ = findViewById(R.id.tv_);
-        btn_1.setOnClickListener(this);
+        img_.setOnClickListener(this);
         btn_2.setOnClickListener(this);
+        btn_3.setOnClickListener(this);
+        btn_3.setOnClickListener(this);
         int checkSelfPermission = ActivityCompat.checkSelfPermission(this, "android.permission.WRITE_EXTERNAL_STORAGE");
         if (checkSelfPermission != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, PERMISSIONS_STORAGE, 456);
@@ -213,19 +228,42 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private void rekognition(String url) {
         showProgress(true, "Identify image");
 //        https://triplog-ocr.s3.amazonaws.com/images/1.jpg
-        int index = url.indexOf(".com");
-        String photo = url.substring(index + 5);
-        Log.e("------", "--" + url + "===" + photo);
+//        https://triplog-oregon.s3.amazonaws.com/receipts/cf57e00f-c7f1-4d06-963f-811dd87b5162.jpg
+        String bucket = url.substring(8, url.indexOf("."));
+        Uri uri = Uri.parse(url);
+        String path = uri.getPath();
+        if (path==null){
+            Toast.makeText(MainActivity.this,"Url is wrong",Toast.LENGTH_LONG).show();
+            return;
+        }
+        String photo = path.substring(1);
+        Log.e("------", "---="+bucket+"=--" + url + "===" + photo);
         S3Object s3Object = new S3Object()
                 .withName(photo)
-                .withBucket("triplog-ocr");
+//                .withBucket("triplog-ocr");
+                .withBucket(bucket);
         Image image = new Image().withS3Object(s3Object);
         final DetectTextRequest request = new DetectTextRequest().withImage(image);
 
         new Thread(new Runnable() {
             @Override
             public void run() {
-                DetectTextResult textResult = mAmazonRekognitionClient.detectText(request);
+                mRekognitionStartTime = System.currentTimeMillis();
+                DetectTextResult textResult = null;
+                try {
+                    textResult = mAmazonRekognitionClient.detectText(request);
+                }catch (final Exception e){
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            Toast.makeText(MainActivity.this,e.getMessage(),Toast.LENGTH_LONG).show();
+                            showProgress(false,"");
+                        }
+                    });
+                }
+                if (textResult==null){
+                    return;
+                }
                 endTime = System.currentTimeMillis();
                 Log.e("------耗时", (endTime - startTime) + "");
                 List<TextDetection> textDetections = textResult.getTextDetections();
@@ -235,42 +273,43 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 mCheckDataStartTime = System.currentTimeMillis();
                 processText(textDetections);
                 Log.e("----hahahhahahah", "---" + (System.currentTimeMillis() - l));
+
+                Collections.sort(textDetections, new Comparator<TextDetection>() {
+                    @Override
+                    public int compare(TextDetection o1, TextDetection o2) {
+                        return o2.getId() > o1.getId() ? 1 : o1.getId().equals(o2.getId()) ? 0 : -1;
+                    }
+                });
 //                Collections.sort(textDetections, new Comparator<TextDetection>() {
 //                    @Override
 //                    public int compare(TextDetection o1, TextDetection o2) {
 //                        return o2.getId() > o1.getId() ? 1 : o1.getId().equals(o2.getId()) ? 0 : -1;
 //                    }
 //                });
-////                Collections.sort(textDetections, new Comparator<TextDetection>() {
-////                    @Override
-////                    public int compare(TextDetection o1, TextDetection o2) {
-////                        return o2.getId() > o1.getId() ? 1 : o1.getId().equals(o2.getId()) ? 0 : -1;
-////                    }
-////                });
-//
-//                Integer idLine = 0;
-//                final StringBuffer reStr = new StringBuffer();
-//                for (int i = 0; i < textDetections.size(); i++) {
-//                    TextDetection textDetection = textDetections.get(i);
-//                    Integer id = textDetection.getId();
-//                    if (!idLine.equals(id)) {
-//                        reStr.append("\n");
-//                        idLine = id;
-//                    }
-//                    reStr.append("  ")
-//                            .append(textDetection.getDetectedText());
-//                }
-//                Log.e("-----------", textDetections.size() + "\n=======\n" + reStr);
+
+                Integer idLine = 0;
+                final StringBuffer reStr = new StringBuffer();
+                for (int i = 0; i < textDetections.size(); i++) {
+                    TextDetection textDetection = textDetections.get(i);
+                    Integer id = textDetection.getId();
+                    if (!idLine.equals(id)) {
+                        reStr.append("\n");
+                        idLine = id;
+                    }
+                    reStr.append("  ")
+                            .append(textDetection.getDetectedText());
+                }
+                Log.e("-----------", textDetections.size() + "\n=======\n" + reStr);
 //                runOnUiThread(new Runnable() {
 //                    @Override
 //                    public void run() {
 //                        tv_.setText("耗时---"+(endTime - startTime)+"ms\n\n"+reStr);
 //                    }
 //                });
-//
-////                for (Label label : labels) {
-////                    Log.e("----------", label.getName() + ": " + label.getConfidence().toString());
-////                }
+
+//                for (Label label : labels) {
+//                    Log.e("----------", label.getName() + ": " + label.getConfidence().toString());
+//                }
             }
         }).start();
 
@@ -312,9 +351,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 showProgress(false, "");
                 mMyAdapterO.notifyDataSetChanged();
                 Toast.makeText(MainActivity.this, "Identify image success", Toast.LENGTH_LONG).show();
-                tv_.setText("上传耗时=="+(mUploadEndTime-mUploadStartTime)
-                        +"==在线解析耗时=="+(mRekognitionEndTime-mRekognitionStartTime)
-                        +"==本地解析耗时=="+(mCheckDataEndTime-mCheckDataStartTime));
+                tv_.setText("上传耗时==" + (mUploadEndTime - mUploadStartTime)
+                        + "==在线解析耗时==" + (mRekognitionEndTime - mRekognitionStartTime)
+                        + "==本地解析耗时==" + (mCheckDataEndTime - mCheckDataStartTime));
             }
         });
     }
@@ -339,7 +378,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private boolean checkPrice(String text) {
-        return Pattern.compile("^(\\$)?\\d+\\.\\d\\d\\d(/[a-zA-Z]+)?").matcher(text).matches();
+        return Pattern.compile("^(\\$)?[1-6]\\.\\d\\d\\d(/[a-zA-Z]+)?").matcher(text).matches();
     }
 
     private boolean checkTotal(String text) {
@@ -347,7 +386,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private boolean checkDate(String text) {
-        return Pattern.compile("(20\\d\\d[/\\-])?([0-3])?\\d[/\\-]([0-3])?\\d([/\\-]20\\d\\d)?").matcher(text).matches();
+        return Pattern.compile("(20\\d\\d[/\\-])?([0-3])?\\d[/\\-]([0-3])?\\d([/\\-]\\d\\d)?([/\\-]20\\d\\d)?").matcher(text).matches();
     }
 
 
@@ -361,7 +400,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             }
             Uri uri = data.getData();
             if (uri != null) {
-                mSelectImageUri=uri;
+                mSelectImageUri = uri;
                 String filePath = getRealPathFromUriAboveApi19(this, uri);
                 startTime = System.currentTimeMillis();
                 Log.e("--------", "开始");
@@ -391,11 +430,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
 //            // accept the cropping results
             String imgPath = mImgOutFile.getAbsolutePath();
-            Bitmap bitmap = BitmapFactory.decodeFile(imgPath);
-            img_.setImageBitmap(bitmap);
+            mCropBitmap = BitmapFactory.decodeFile(imgPath);
+            img_.setImageBitmap(mCropBitmap);
             mUploadStartTime = System.currentTimeMillis();
             upload(imgPath);
-
         }
     }
 
@@ -684,9 +722,82 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             case R.id.btn_2:
                 click2();
                 break;
+            case R.id.btn_3:
+                mCropBitmap=null;
+                click3();
+                break;
+            case R.id.img_:
+                clickImg();
+                break;
         }
     }
 
+    private void clickImg() {
+        String enterUrl = et_url.getText().toString();
+        if (mCropBitmap==null&&TextUtils.isEmpty(enterUrl)){
+            return;
+        }
+        showImg(mCropBitmap,enterUrl);
+    }
+
+    private void showImg(Bitmap bitmap,String url) {
+        final android.app.AlertDialog dialog = new android.app.AlertDialog
+                .Builder(this, R.style.showImgDialog)
+                .create();
+        if (dialog != null) {
+            dialog.show();
+            Window window = dialog.getWindow();
+            if (window == null) return;
+            DisplayMetrics displayMetrics = getResources().getDisplayMetrics();
+            window.setLayout(displayMetrics.widthPixels * 4 / 5,
+                    displayMetrics.heightPixels * 4 / 5);
+            Log.e("-----大小-","-----"+(displayMetrics.widthPixels * 4 / 5)+"---"+(displayMetrics.heightPixels * 4 / 5));
+            ImageView imageView = new TouchImageView(this);
+            window.setContentView(imageView, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT
+                    , ViewGroup.LayoutParams.MATCH_PARENT));
+            imageView.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    dialog.dismiss();
+                }
+            });
+            Glide.with(MainActivity.this)
+                    .load(bitmap != null ? bitmap : url)
+                    .apply(new RequestOptions()
+                            .placeholder(R.drawable.loading)
+                            .error(R.drawable.load_failed))
+                    .into(imageView);
+        }
+    }
+    /**
+     * enter Url
+     */
+    private void click3() {
+        InputMethodManager inputMethodManager = (InputMethodManager) this.getSystemService(Activity.INPUT_METHOD_SERVICE);
+        inputMethodManager.hideSoftInputFromWindow(et_url.getWindowToken(), InputMethodManager.HIDE_NOT_ALWAYS);
+
+        String enterUrl = et_url.getText().toString();
+        if (TextUtils.isEmpty(enterUrl)) {
+            Toast.makeText(this, "Url cannot be empty", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (enterUrl.length() < 8) {
+            Toast.makeText(this, "Url is wrong", Toast.LENGTH_LONG).show();
+            return;
+        }
+        if (!enterUrl.contains("s3.amazonaws")) {
+            Toast.makeText(this, "Url Not AWS", Toast.LENGTH_LONG).show();
+        } else {
+            Glide.with(this)
+                    .load(enterUrl)
+                    .into(img_);
+            rekognition(enterUrl);
+        }
+    }
+
+    /**
+     * select img
+     */
     private void click2() {
         Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
@@ -694,6 +805,9 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         startActivityForResult(intent, 321);
     }
 
+    /**
+     * photograph
+     */
     private void click1() {
         int checkSelfPermission = ActivityCompat.checkSelfPermission(this, "android.permission.CAMERA");
         if (checkSelfPermission == PackageManager.PERMISSION_GRANTED) {
@@ -739,7 +853,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 if (TransferState.COMPLETED == state) {
                     // Handle a completed upload.
                     mUploadEndTime = System.currentTimeMillis();
-                    mRekognitionStartTime = System.currentTimeMillis();
                     rekognition("https://triplog-ocr.s3.amazonaws.com/" + key);
                 }
             }
@@ -772,6 +885,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             mDialog = new AlertDialog
                     .Builder(this)
                     .setView(view)
+                    .setCancelable(false)
                     .create();
         }
         if (!TextUtils.isEmpty(msg)) {
