@@ -226,6 +226,10 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
      * 开始识别
      */
     private void rekognition(String url) {
+        mDateDatas.clear();
+        mTimeDatas.clear();
+        mPriceDatas.clear();
+        mTotalDatas.clear();
         showProgress(true, "Identify image");
 //        https://triplog-ocr.s3.amazonaws.com/images/1.jpg
 //        https://triplog-oregon.s3.amazonaws.com/receipts/cf57e00f-c7f1-4d06-963f-811dd87b5162.jpg
@@ -328,6 +332,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 continue;
             }
             if (checkTimeDate(text)) {
+                Log.e("------Time","---------"+text);
                 if (i + 1 < textDetections.size()
                         && checkTimeAPM(textDetections.get(i + 1).getDetectedText())) {
                     addData(mTimeDatas, text + " " + textDetections.get(i + 1).getDetectedText());
@@ -370,7 +375,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private boolean checkTimeDate(String text) {
-        return Pattern.compile("^[0-2]\\d:[0-5]\\d(:[0-5]\\d)?([AP]M)?").matcher(text).matches();
+        return Pattern.compile("^[0-2]\\d:[0-5]\\d(:[0-5]\\d)?([APap][Mm])?").matcher(text).matches();
     }
 
     private boolean checkTimeAPM(String text) {
@@ -378,15 +383,26 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private boolean checkPrice(String text) {
-        return Pattern.compile("^(\\$)?[1-6]\\.\\d\\d\\d(/[a-zA-Z]+)?").matcher(text).matches();
+        return Pattern.compile("^([$@])?[1-6]\\.\\d\\d\\d(/[a-zA-Z]+)?").matcher(text).matches()
+                &&checkAmount(text);
     }
 
     private boolean checkTotal(String text) {
-        return Pattern.compile("^(\\$)?\\d+\\.\\d\\d").matcher(text).matches();
+        return Pattern.compile("^(\\$)?\\d+\\.\\d\\d").matcher(text).matches()
+                &&checkAmount(text);
     }
 
     private boolean checkDate(String text) {
         return Pattern.compile("(20\\d\\d[/\\-])?([0-3])?\\d[/\\-]([0-3])?\\d([/\\-]\\d\\d)?([/\\-]20\\d\\d)?").matcher(text).matches();
+    }
+
+    private boolean checkAmount(String text) {
+        String amountStr = text.replaceAll("[a-zA-Z/$@]", "");
+        try{
+            return Float.parseFloat(amountStr)>0f;
+        }catch (Exception e){
+            return true;
+        }
     }
 
 
