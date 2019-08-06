@@ -226,10 +226,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
      * 开始识别
      */
     private void rekognition(String url) {
-        mDateDatas.clear();
-        mTimeDatas.clear();
-        mPriceDatas.clear();
-        mTotalDatas.clear();
+        clearData();
         showProgress(true, "Identify image");
 //        https://triplog-ocr.s3.amazonaws.com/images/1.jpg
 //        https://triplog-oregon.s3.amazonaws.com/receipts/cf57e00f-c7f1-4d06-963f-811dd87b5162.jpg
@@ -319,6 +316,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     }
 
+    private void clearData() {
+        mDateDatas.clear();
+        mTimeDatas.clear();
+        mPriceDatas.clear();
+        mTotalDatas.clear();
+        mMyAdapterO.notifyDataSetChanged();
+    }
+
     private void processText(List<TextDetection> textDetections) {
         for (int i = 0; i < textDetections.size(); i++) {
             TextDetection textDetection = textDetections.get(i);
@@ -375,7 +380,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     }
 
     private boolean checkTimeDate(String text) {
-        return Pattern.compile("^[0-2]\\d:[0-5]\\d(:[0-5]\\d)?([APap][Mm])?").matcher(text).matches();
+        return Pattern.compile("^([0-2])?\\d:([0-5])?\\d(:([0-5])?\\d)?([APap][Mm])?").matcher(text).matches();
     }
 
     private boolean checkTimeAPM(String text) {
