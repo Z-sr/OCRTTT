@@ -944,6 +944,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             myViewHolderO.tv_item_key.setText(key);
             if (valueList == null || valueList.isEmpty()) {
                 myViewHolderO.et_item_value.setHint(key);
+                myViewHolderO.et_item_value.setText("");
             } else {
                 myViewHolderO.et_item_value.setText(valueList.get(0));
             }
