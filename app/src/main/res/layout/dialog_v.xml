@@ -4,6 +4,8 @@
     android:layout_width="match_parent"
     android:layout_height="100dp"
     android:gravity="center"
+    android:paddingLeft="10dp"
+    android:paddingRight="10dp"
     >
     <TextView
         android:id="@+id/tv_dialog"
@@ -14,9 +16,13 @@
         android:layout_marginTop="5dp"
         />
     <ProgressBar
-        android:layout_width="wrap_content"
+        android:id="@+id/pb_dialog"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="5dp"
+        style="?android:attr/progressBarStyleHorizontal"
+        android:layout_gravity="center"
+        android:max="100"
         />
 
 </LinearLayout>

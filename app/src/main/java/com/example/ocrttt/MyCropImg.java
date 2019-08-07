@@ -25,6 +25,7 @@ public class MyCropImg extends AppCompatActivity implements View.OnClickListener
     public final static String IMG_URI = "imgUri";
     public final static String IMG_SAVE_URI = "imgSaveUri";
     public final static int REQUEST_CROP_CODE = 111;
+    public final static int RESULT_CROP_CODE = 111;
     private View btn_save;
     private View btn_left_rotation;
     private View btn_right_rotation;
@@ -49,6 +50,9 @@ public class MyCropImg extends AppCompatActivity implements View.OnClickListener
 
 
         mCropImageView.setCropMode(CropImageView.CropMode.FREE);
+        mCropImageView.setCompressFormat(Bitmap.CompressFormat.JPEG);
+        mCropImageView.setCompressQuality(60);
+
         mIntent = getIntent();
         mImgUri = mIntent.getParcelableExtra(IMG_URI);
         mImgSaveUri = mIntent.getParcelableExtra(IMG_SAVE_URI);
@@ -93,7 +97,7 @@ public class MyCropImg extends AppCompatActivity implements View.OnClickListener
                                 .execute(mImgSaveUri, new SaveCallback() {
                                     @Override
                                     public void onSuccess(Uri uri) {
-                                        setResult(REQUEST_CROP_CODE, mIntent);
+                                        setResult(RESULT_CROP_CODE, mIntent);
                                         finish();
                                     }
                                     @Override

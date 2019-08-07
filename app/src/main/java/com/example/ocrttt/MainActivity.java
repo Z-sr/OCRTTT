@@ -16,6 +16,8 @@ import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Message;
 import android.preference.PreferenceManager;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
@@ -42,6 +44,7 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -80,8 +83,12 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
+import java.lang.ref.WeakReference;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.MappedByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -97,6 +104,8 @@ import static com.example.ocrttt.MyCropImg.IMG_URI;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
 
+    private final static int progressAll=100;
+    private final static float ESTIMATED_TIME=7*1000;
     private ImageView img_;
     private View btn_1;
     private View btn_2;
@@ -113,14 +122,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private AmazonS3Client mAmazonS3Client;
     private AmazonRekognitionClient mAmazonRekognitionClient;
     private File mFilePath = new File(Environment.getExternalStorageDirectory().getPath() + File.separator + "VVVV");
-    private long startTime;
-    private long endTime;
     private RecyclerView rv_;
     private Map<String, List<String>> mDatas;
     private MyAdapterO mMyAdapterO;
     private AlertDialog mDialog;
     private TextView tv_dialog;
-    private int REQUEST_CROP_CODE = 111;
+    private ProgressBar pb_dialog;
     private ArrayList<String> mDateDatas;
     private ArrayList<String> mTimeDatas;
     private ArrayList<String> mPriceDatas;
@@ -134,6 +141,41 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private long mCheckDataStartTime;
     private long mCheckDataEndTime;
     private Bitmap mCropBitmap;
+    private float mImgSize;
+    private float nowTime;
+
+    private MyHandler mHandler=new MyHandler(this);
+
+    class MyHandler extends Handler{
+        private final WeakReference<MainActivity> mWeakReference;
+
+        public MyHandler(MainActivity activity) {
+            mWeakReference = new WeakReference<>(activity);
+        }
+
+        @Override
+        public void handleMessage(Message msg) {
+            super.handleMessage(msg);
+            MainActivity mainActivity = mWeakReference.get();
+            if (mainActivity==null){
+                return;
+            }
+            if (msg.what==1){
+                nowTime+=500;
+                if (nowTime>=ESTIMATED_TIME){
+                    return;
+                }
+                showProgress(true, (String) msg.obj,nowTime/ESTIMATED_TIME);
+                Message message = new Message();
+                message.what=1;
+                message.obj=msg.obj;
+                mHandler.sendMessageDelayed(message,500);
+            }else if (msg.what==2){
+                nowTime=0;
+                mHandler.removeMessages(1);
+            }
+        }
+    }
 
 
     @Override
@@ -225,30 +267,54 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     /**
      * 开始识别
      */
-    private void rekognition(String url) {
+    private void rekognition(String url,File imgFile) {
         clearData();
-        showProgress(true, "Identify image");
+        showProgress(true, "Prepare Image",0);
 //        https://triplog-ocr.s3.amazonaws.com/images/1.jpg
 //        https://triplog-oregon.s3.amazonaws.com/receipts/cf57e00f-c7f1-4d06-963f-811dd87b5162.jpg
-        String bucket = url.substring(8, url.indexOf("."));
-        Uri uri = Uri.parse(url);
-        String path = uri.getPath();
-        if (path==null){
-            Toast.makeText(MainActivity.this,"Url is wrong",Toast.LENGTH_LONG).show();
+        if (TextUtils.isEmpty(url)&&imgFile==null){
             return;
         }
-        String photo = path.substring(1);
-        Log.e("------", "---="+bucket+"=--" + url + "===" + photo);
-        S3Object s3Object = new S3Object()
-                .withName(photo)
-//                .withBucket("triplog-ocr");
-                .withBucket(bucket);
-        Image image = new Image().withS3Object(s3Object);
+        Image image;
+        if (url!=null){
+            String bucket = url.substring(8, url.indexOf("."));
+            Uri uri = Uri.parse(url);
+            String path = uri.getPath();
+            if (path==null){
+                Toast.makeText(MainActivity.this,"Url is wrong",Toast.LENGTH_LONG).show();
+                return;
+            }
+            String photo = path.substring(1);
+            S3Object s3Object = new S3Object()
+                    .withName(photo)
+                    .withBucket(bucket);
+            image = new Image().withS3Object(s3Object);
+        }else {
+            MappedByteBuffer byteBuffer;
+            try {
+                byteBuffer = new RandomAccessFile(imgFile, "r")
+                        .getChannel()
+                        .map(FileChannel.MapMode.READ_ONLY,0,imgFile.length());
+            } catch (IOException e) {
+                Toast.makeText(MainActivity.this,"imgFile is wrong",Toast.LENGTH_LONG).show();
+                return;
+            }
+            if (byteBuffer==null){
+                Toast.makeText(MainActivity.this,"imgFile is wrong",Toast.LENGTH_LONG).show();
+                return;
+            }
+            image = new Image().withBytes(byteBuffer);
+        }
+
         final DetectTextRequest request = new DetectTextRequest().withImage(image);
 
         new Thread(new Runnable() {
             @Override
             public void run() {
+                Message message = new Message();
+                message.what=1;
+                message.obj="Identify image";
+                mHandler.sendMessage(message);
                 mRekognitionStartTime = System.currentTimeMillis();
                 DetectTextResult textResult = null;
                 try {
@@ -258,22 +324,19 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         @Override
                         public void run() {
                             Toast.makeText(MainActivity.this,e.getMessage(),Toast.LENGTH_LONG).show();
-                            showProgress(false,"");
+                            showProgress(false,"",1);
+                            mHandler.sendEmptyMessage(2);
                         }
                     });
                 }
+                mRekognitionEndTime = System.currentTimeMillis();
                 if (textResult==null){
                     return;
                 }
-                endTime = System.currentTimeMillis();
-                Log.e("------耗时", (endTime - startTime) + "");
-                List<TextDetection> textDetections = textResult.getTextDetections();
-                mRekognitionEndTime = System.currentTimeMillis();
 
-                long l = System.currentTimeMillis();
-                mCheckDataStartTime = System.currentTimeMillis();
+                List<TextDetection> textDetections = textResult.getTextDetections();
+                //本地解析
                 processText(textDetections);
-                Log.e("----hahahhahahah", "---" + (System.currentTimeMillis() - l));
 
                 Collections.sort(textDetections, new Comparator<TextDetection>() {
                     @Override
@@ -281,12 +344,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                         return o2.getId() > o1.getId() ? 1 : o1.getId().equals(o2.getId()) ? 0 : -1;
                     }
                 });
-//                Collections.sort(textDetections, new Comparator<TextDetection>() {
-//                    @Override
-//                    public int compare(TextDetection o1, TextDetection o2) {
-//                        return o2.getId() > o1.getId() ? 1 : o1.getId().equals(o2.getId()) ? 0 : -1;
-//                    }
-//                });
 
                 Integer idLine = 0;
                 final StringBuffer reStr = new StringBuffer();
@@ -324,7 +381,11 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mMyAdapterO.notifyDataSetChanged();
     }
 
+    /**
+     * 本地解析方法
+     */
     private void processText(List<TextDetection> textDetections) {
+        mCheckDataStartTime=System.currentTimeMillis();
         for (int i = 0; i < textDetections.size(); i++) {
             TextDetection textDetection = textDetections.get(i);
             Log.e("-------", textDetection.getType() + "===" + textDetection.getDetectedText() + "\n");
@@ -358,10 +419,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                showProgress(false, "");
+                mHandler.sendEmptyMessage(2);
+                showProgress(false, "ok",1);
                 mMyAdapterO.notifyDataSetChanged();
                 Toast.makeText(MainActivity.this, "Identify image success", Toast.LENGTH_LONG).show();
-                tv_.setText("上传耗时==" + (mUploadEndTime - mUploadStartTime)
+                tv_.setText("选择的图片大小(拍照/相册)=="+mImgSize+
+                        "kb\n上传耗时==" + (mUploadEndTime - mUploadStartTime)
                         + "==在线解析耗时==" + (mRekognitionEndTime - mRekognitionStartTime)
                         + "==本地解析耗时==" + (mCheckDataEndTime - mCheckDataStartTime));
             }
@@ -423,8 +486,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             if (uri != null) {
                 mSelectImageUri = uri;
                 String filePath = getRealPathFromUriAboveApi19(this, uri);
-                startTime = System.currentTimeMillis();
-                Log.e("--------", "开始");
                 //开始调用系统剪裁
                 croppingImg();
             }
@@ -443,18 +504,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                     startActivityForResult(takePictureIntent, 789);
                 }
             }
-        } else if (requestCode == REQUEST_CROP_CODE) {//剪裁图片后的返回
-
-//            Bundle bundle = data.getExtras();
-//            Bitmap bitmap = bundle.getParcelable("data");
-//            img_.setImageBitmap(bitmap);
-
+        } else if (requestCode == MyCropImg.REQUEST_CROP_CODE && resultCode == MyCropImg.RESULT_CROP_CODE) {//剪裁图片后的返回
 //            // accept the cropping results
             String imgPath = mImgOutFile.getAbsolutePath();
             mCropBitmap = BitmapFactory.decodeFile(imgPath);
             img_.setImageBitmap(mCropBitmap);
-            mUploadStartTime = System.currentTimeMillis();
-            upload(imgPath);
+            mImgSize = mImgOutFile.length() / 1024f;
+//            upload(imgPath);
+            rekognition(null,mImgOutFile);
         }
     }
 
@@ -504,7 +561,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         intent.putExtra(IMG_SAVE_URI,uri);
         intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                 | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        startActivityForResult(intent,REQUEST_CROP_CODE);
+        startActivityForResult(intent,MyCropImg.REQUEST_CROP_CODE);
     }
 
 //    /**
@@ -556,7 +613,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     public File saveBitmap(Bitmap bm, String picName) {
         Log.e("", "保存图片---" + mFilePath);
-        startTime = System.currentTimeMillis();
         try {
             File file = getImgFile(picName);
             FileOutputStream out = new FileOutputStream(file);
@@ -812,7 +868,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             Glide.with(this)
                     .load(enterUrl)
                     .into(img_);
-            rekognition(enterUrl);
+            rekognition(enterUrl,null);
         }
     }
 
@@ -853,7 +909,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
 
     private void upload(String filePath) {
-        showProgress(true, "uploading image");
+        mUploadStartTime = System.currentTimeMillis();
+        showProgress(true, "uploading image",0);
         //https://triplog-ocr.s3.amazonaws.com/images/1.jpg
         String[] split = filePath.split("\\.");
         final String key = "images" + File.separator + System.currentTimeMillis() + "." + split[split.length - 1];
@@ -874,7 +931,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
                 if (TransferState.COMPLETED == state) {
                     // Handle a completed upload.
                     mUploadEndTime = System.currentTimeMillis();
-                    rekognition("https://triplog-ocr.s3.amazonaws.com/" + key);
+//                    rekognition("https://triplog-ocr.s3.amazonaws.com/" + key);
                 }
             }
 
@@ -882,7 +939,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             public void onProgressChanged(int id, long bytesCurrent, long bytesTotal) {
                 float percentDonef = ((float) bytesCurrent / (float) bytesTotal) * 100;
                 int percentDone = (int) percentDonef;
-                showProgress(true, "uploading image -- " + percentDone + "%");
+                showProgress(true, "uploading image -- " + percentDone + "%", percentDonef);
 
                 Log.e("YourActivity", "ID:" + id + " bytesCurrent: " + bytesCurrent
                         + " bytesTotal: " + bytesTotal + " " + percentDone + "%");
@@ -892,26 +949,30 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             public void onError(int id, Exception ex) {
                 // Handle errors
                 Log.e("-----upload失败--", ex.toString());
-                showProgress(false, "");
+                showProgress(false, "",1);
                 Toast.makeText(MainActivity.this, "uploading images failure", Toast.LENGTH_LONG).show();
             }
 
         });
     }
 
-    private void showProgress(boolean isShow, String msg) {
+    private void showProgress(boolean isShow, String msg,float progress) {
         if (mDialog == null) {
             View view = LayoutInflater.from(this).inflate(R.layout.dialog_v, null, false);
             tv_dialog = view.findViewById(R.id.tv_dialog);
+            pb_dialog = view.findViewById(R.id.pb_dialog);
+            pb_dialog.setProgress(progressAll);
             mDialog = new AlertDialog
                     .Builder(this)
                     .setView(view)
                     .setCancelable(false)
                     .create();
         }
+        int progresss = (int) (progress * progressAll);
         if (!TextUtils.isEmpty(msg)) {
-            tv_dialog.setText(msg);
+            tv_dialog.setText(msg+"---"+ progresss+"%");
         }
+        pb_dialog.setProgress(progresss);
 
         if (isShow && !mDialog.isShowing()) {
             mDialog.show();
