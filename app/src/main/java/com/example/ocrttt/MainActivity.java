@@ -485,7 +485,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             Uri uri = data.getData();
             if (uri != null) {
                 mSelectImageUri = uri;
-                String filePath = getRealPathFromUriAboveApi19(this, uri);
+//                String filePath = getRealPathFromUriAboveApi19(this, uri);
                 //开始调用系统剪裁
                 croppingImg();
             }
